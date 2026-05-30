@@ -1,0 +1,21 @@
+name: OmniFlow
+description: Security-first validation for Omni semantic-layer changes.
+inputs:
+  config:
+    description: Path to .omniflow.yml
+    required: false
+    default: .omniflow.yml
+  version:
+    description: PyPI version of omniflow to install.
+    required: false
+    default: "0.4.0"
+runs:
+  using: composite
+  steps:
+    - name: Install OmniFlow
+      shell: bash
+      run: python -m pip install "omniflow==${{ inputs.version }}"
+
+    - name: Run OmniFlow
+      shell: bash
+      run: omniflow run --auto --config "${{ inputs.config }}"
