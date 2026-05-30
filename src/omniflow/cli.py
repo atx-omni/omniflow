@@ -122,14 +122,23 @@ def _add_common_omni_args(parser: argparse.ArgumentParser) -> None:
 def cmd_run(args: argparse.Namespace) -> int:
     config = _override_config(load_config(args.config), args)
     output_dir = Path(config.reporting.output_dir)
-    contexts = discover_contexts(
-        auto=args.auto,
-        base_url=config.omni.base_url,
-        model_id=config.omni.model_id,
-        model_path=getattr(args, "model_path", None),
-        branch_name=config.omni.branch_name,
-        branch_id=config.omni.branch_id,
-    )
+    try:
+        contexts = discover_contexts(
+            auto=args.auto,
+            base_url=config.omni.base_url,
+            model_id=config.omni.model_id,
+            model_path=getattr(args, "model_path", None),
+            branch_name=config.omni.branch_name,
+            branch_id=config.omni.branch_id,
+            allow_skip=True,
+        )
+    except OmniCIError as exc:
+        _write_setup_failure_artifacts(config=config, output_dir=output_dir, exc=exc)
+        raise
+    if not contexts:
+        _write_skipped_artifacts(config=config, output_dir=output_dir)
+        print("OmniFlow skipped: no Omni PR context or changed Omni model files detected")
+        return 0
     all_reports = []
     all_issues: list[dict[str, Any]] = []
     exit_code = 0
@@ -162,6 +171,83 @@ def cmd_run(args: argparse.Namespace) -> int:
     write_json_report(output_dir / "evidence.json", evidence)
     print(f"OmniFlow complete: models={len(contexts)} issues={summary['total_issues']} exit_code={exit_code}")
     return exit_code
+
+
+def _write_setup_failure_artifacts(*, config, output_dir: Path, exc: OmniCIError) -> None:
+    issue = {
+        "severity": "error",
+        "validator": "setup",
+        "message": redact(str(exc)),
+    }
+    summary = _summarize([issue])
+    report = {
+        "tool": "omniflow",
+        "tool_version": __version__,
+        "generated_at": dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "git_sha": current_sha(),
+        "git_branch": current_branch(),
+        "pr_number": pr_number(),
+        "models": [],
+        "config_hash": config.hash,
+        "summary": summary,
+        "issues": [issue],
+        "model_reports": [],
+        "policy_decision": "fail",
+        "exit_code": exc.exit_code,
+        "exit_code_reason": "configuration error" if exc.exit_code == ExitCodes.CONFIG_ERROR else "setup failed",
+    }
+    write_reports(report, output_dir=output_dir, formats=config.reporting.formats)
+    evidence = {
+        "tool": "omniflow",
+        "tool_version": __version__,
+        "config_hash": config.hash,
+        "git_sha": current_sha(),
+        "git_branch": current_branch(),
+        "pr_number": pr_number(),
+        "models": [],
+        "validation_status": "failed",
+        "policy_decision": "fail",
+        "exit_code": exc.exit_code,
+        "exit_code_reason": report["exit_code_reason"],
+        "timestamp": dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+    write_json_report(output_dir / "evidence.json", evidence)
+
+
+def _write_skipped_artifacts(*, config, output_dir: Path) -> None:
+    summary = _summarize([])
+    report = {
+        "tool": "omniflow",
+        "tool_version": __version__,
+        "generated_at": dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "git_sha": current_sha(),
+        "git_branch": current_branch(),
+        "pr_number": pr_number(),
+        "models": [],
+        "config_hash": config.hash,
+        "summary": summary,
+        "issues": [],
+        "model_reports": [],
+        "policy_decision": "skipped",
+        "exit_code": 0,
+        "exit_code_reason": "no Omni PR context or changed Omni model files detected",
+    }
+    write_reports(report, output_dir=output_dir, formats=config.reporting.formats)
+    evidence = {
+        "tool": "omniflow",
+        "tool_version": __version__,
+        "config_hash": config.hash,
+        "git_sha": current_sha(),
+        "git_branch": current_branch(),
+        "pr_number": pr_number(),
+        "models": [],
+        "validation_status": "skipped",
+        "policy_decision": "skipped",
+        "exit_code": 0,
+        "exit_code_reason": report["exit_code_reason"],
+        "timestamp": dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+    write_json_report(output_dir / "evidence.json", evidence)
 
 
 def _run_context(

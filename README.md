@@ -31,6 +31,12 @@ Optional fallback metadata:
 
 An example file is included at `.omni/flow.example.json`.
 
+## PR Routing
+
+OmniFlow is safe to install in repositories that also receive dbt, docs, or application-code pull requests. When `omniflow run --auto` does not find an Omni PR marker and cannot match changed files to Omni-managed metadata, it exits `0` with a skipped policy decision and still writes evidence artifacts.
+
+Malformed Omni metadata, secret-like keys, or an Omni PR marker that cannot be resolved still fail the run. This keeps non-Omni work quiet while preserving strong gates for semantic-layer changes.
+
 ## Downstream Impact Generation
 
 OmniFlow does not require customers to commit a dependency graph. During `omniflow run --auto`, it:

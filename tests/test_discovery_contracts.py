@@ -57,6 +57,31 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(contexts[0].model_id, "model-1")
         self.assertEqual(contexts[0].branch_name, "feature/a")
 
+    def test_auto_routing_skips_when_no_omni_context_exists(self):
+        with temporary_workdir():
+            with mock.patch.dict(os.environ, {}, clear=True):
+                contexts = discover_contexts(auto=True, allow_skip=True)
+        self.assertEqual(contexts, [])
+
+    def test_auto_routing_skips_non_omni_changed_files(self):
+        with temporary_workdir() as tmp:
+            write_json(
+                tmp / ".omni/flow.json",
+                {
+                    "version": 1,
+                    "models": [
+                        {
+                            "base_url": "https://omni.example",
+                            "model_id": "model-1",
+                            "model_path": "omni/model",
+                        }
+                    ],
+                },
+            )
+            with mock.patch.dict(os.environ, {"OMNIFLOW_CHANGED_FILES": "models/marts/fact_orders.sql"}, clear=True):
+                contexts = discover_contexts(auto=True, allow_skip=True)
+        self.assertEqual(contexts, [])
+
     def test_multi_model_selection_by_changed_file_prefix(self):
         with temporary_workdir() as tmp:
             write_json(

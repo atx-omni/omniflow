@@ -38,6 +38,7 @@ def discover_contexts(
     branch_name: str | None = None,
     branch_id: str | None = None,
     flow_path: str | Path = FLOW_PATH,
+    allow_skip: bool = False,
 ) -> list[ModelContext]:
     branch = branch_name or discover_branch_name()
     if base_url and model_id:
@@ -71,9 +72,17 @@ def discover_contexts(
             context.branch_id = branch_id
         return [context]
 
+    if allow_skip and not marker and not Path(flow_path).exists():
+        return []
     flow = load_flow_metadata(flow_path)
     changed_files = get_changed_files(base_branch=marker.get("base_branch") or None)
-    contexts = select_model_contexts(flow, changed_files=changed_files, marker=marker, branch_name=branch)
+    contexts = select_model_contexts(
+        flow,
+        changed_files=changed_files,
+        marker=marker,
+        branch_name=branch,
+        allow_skip=allow_skip,
+    )
     if branch_id:
         for context in contexts:
             context.branch_id = branch_id
@@ -150,6 +159,7 @@ def select_model_contexts(
     changed_files: list[str],
     marker: dict[str, Any] | None = None,
     branch_name: str | None = None,
+    allow_skip: bool = False,
 ) -> list[ModelContext]:
     models = [_model_from_payload(item, branch_name=branch_name) for item in flow["models"] if isinstance(item, dict)]
     marker = marker or {}
@@ -168,6 +178,8 @@ def select_model_contexts(
     ]
     if matched:
         return matched
+    if allow_skip and changed_files:
+        return []
     if len(models) == 1:
         return models
     raise ConfigError("Could not select an Omni model from changed files. Add an omniflow-context PR marker.")
@@ -193,4 +205,3 @@ def _is_under_model_path(path: str, model_path: str) -> bool:
     normalized_path = path.strip().strip("/")
     normalized_model_path = model_path.strip().strip("/")
     return normalized_path == normalized_model_path or normalized_path.startswith(f"{normalized_model_path}/")
-
